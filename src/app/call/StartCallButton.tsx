@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { startCall, StartCallResponse } from './actions'
+import { startCall, StartCallResponse, endCall } from './actions'
 import { Volume2, VolumeX } from 'lucide-react'
-
 
 export default function StartCallButton() {
   const [isLoading, setIsLoading] = useState(false)
@@ -81,15 +80,44 @@ export default function StartCallButton() {
     }
   }
 
+  const handleEndCall = async () => {
+    if (result) {
+      setIsLoading(true)
+      try {
+        await endCall(result.call_id)
+        stopAudio()
+        setResult(null)
+        setError(null)
+        setIsPlaying(false)
+        audioBufferRef.current = null
+      } catch (error) {
+        setError('Error occurred while ending the call')
+        console.error(error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+  }
+  
   return (
     <div className="flex flex-col items-center">
-      <button
-        onClick={handleStartCall}
-        disabled={isLoading}
-        className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
-      >
-        {isLoading ? 'Starting Call...' : 'Start Call'}
-      </button>
+      {!result ? (
+        <button
+          onClick={handleStartCall}
+          disabled={isLoading}
+          className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+        >
+          {isLoading ? 'Starting Call...' : 'Start Call'}
+        </button>
+      ) : (
+        <button
+          onClick={handleEndCall}
+          disabled={isLoading}
+          className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+        >
+          {isLoading ? 'Ending Call...' : 'End Call'}
+        </button>
+      )}
       {error && <p className="mt-4 text-red-500">{error}</p>}
       {result && (
         <div className="mt-4 text-center">
@@ -102,7 +130,7 @@ export default function StartCallButton() {
               className={`p-2 rounded-full ${isPlaying ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'}`}
               disabled={!audioBufferRef.current}
             >
-              {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
+              {isPlaying ? <VolumeX size={24} color="white" /> : <Volume2 size={24} color="white" />}
             </button>
           </div>
         </div>

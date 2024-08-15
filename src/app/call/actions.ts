@@ -41,3 +41,33 @@ export async function startCall(): Promise<StartCallResponse> {
     throw error
   }
 }
+
+
+export async function endCall(callId: string): Promise<void> {
+  const apiKey = process.env.DELPHI_API_KEY
+  const baseUrl = process.env.DELPHI_API_BASE_URI
+
+  if (!apiKey || !baseUrl) {
+    throw new Error('API key or base URL not found in environment variables')
+  }
+
+  try {
+    const response = await fetch(`https://${baseUrl}/interaction/call/end`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify({ call_id: callId })
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error(errorData)
+      throw new Error(`Failed to end call: ${response.status}`)
+    }
+  } catch (error) {
+    console.error('Error in endCall:', error)
+    throw error
+  }
+}
