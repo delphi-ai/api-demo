@@ -7,8 +7,6 @@ export async function GET(req: NextRequest) {
   const call_id = params.get('call_id');
   const message = params.get('message');
 
-  console.log('Received parameters:', { call_id, message });
-
   const apiKey = process.env.DELPHI_API_KEY
   const baseUrl = process.env.DELPHI_API_BASE_URI
 

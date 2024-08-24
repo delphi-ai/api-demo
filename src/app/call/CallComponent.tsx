@@ -179,12 +179,23 @@ export default function CallComponent() {
     }
   }
 
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+
+
   const handleSendAudioMessage = async () => {
     if (callInfo && audioBlob) {
       console.log('Sending audio blob:', audioBlob)
       try { 
         const arrayBuffer = await audioBlob.arrayBuffer();
-        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const base64Audio = arrayBufferToBase64(arrayBuffer);
         const response = await fetch(`/api/call/audio`, {
           method: 'POST',
           headers: {
@@ -202,32 +213,45 @@ export default function CallComponent() {
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
           
-          for (const line of lines) {
+          // Process all complete events
+          for (let i = 0; i < lines.length - 1; i++) {
+            const line = lines[i];
             if (line.startsWith('data: ')) {
-              const eventData = JSON.parse(line.slice(6));
-              console.log('Event data:', eventData);
-              
-              // Process the event data here
-              // setEvents(prevEvents => [...prevEvents, eventData]);
-              
-              // You can add more logic here to handle different types of events
-              // or update other state variables based on the event data
+              try {
+                const parsedData: AudioChunk = JSON.parse(line.slice(6));
+                console.log('Received event:', parsedData);
+                if (parsedData.event == 'audio-chunk'){
+                  const audioData = base64ToFloat32Array(parsedData.audio)
+                  audioBufferQueueRef.current.push(audioData)
+                  if (!isPlayingRef.current) {
+                    playNextChunk()
+                  }
+                }
+              } catch (parseError) {
+                console.error('Error parsing event data:', parseError);
+              }
             }
           }
+          
+          // Keep the last potentially incomplete event in the buffer
+          buffer = lines[lines.length - 1];
         }
       } catch (error) {
         console.error('Error:', error);
         // Handle errors here
       }
       setAudioBlob(null);
+      setIsSending(false);
+      setMessage('');
     }
   }
 

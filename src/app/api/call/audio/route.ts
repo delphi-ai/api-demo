@@ -7,8 +7,6 @@ export async function POST(req: NextRequest) {
   const call_id = body.call_id;
   const audio = body.audio;
 
-  console.log('Received parameters:', { call_id, audio });
-
   const apiKey = process.env.DELPHI_API_KEY
   const baseUrl = process.env.DELPHI_API_BASE_URI
 
