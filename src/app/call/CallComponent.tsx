@@ -3,6 +3,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { startCall, StartCallResponse, endCall } from './actions'
 import { Volume2, VolumeX, Send } from 'lucide-react'
+import { EventSourcePolyfill } from 'event-source-polyfill'
+
+interface AudioChunk {
+  event: string
+  audio: string
+}
 
 export default function CallComponent() {
   const [isLoading, setIsLoading] = useState(false)
@@ -15,15 +21,13 @@ export default function CallComponent() {
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioBufferRef = useRef<AudioBuffer | null>(null)
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null)
-  const eventSourceRef = useRef<EventSource | null>(null)
+  const audioBufferQueueRef = useRef<Float32Array[]>([])
+  const isPlayingRef = useRef(false)
 
   useEffect(() => {
     return () => {
       if (audioContextRef.current) {
         audioContextRef.current.close()
-      }
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
       }
     }
   }, [])
@@ -36,6 +40,7 @@ export default function CallComponent() {
       const response = await startCall()
       setResult(response)
       await decodeAudio(response.greeting_audio)
+      playAudio(response.greeting_audio)
     } catch (error) {
       setError('Error occurred during the call')
       console.error(error)
@@ -97,10 +102,12 @@ export default function CallComponent() {
       setIsLoading(true)
       try {
         await endCall(result.call_id)
+        setIsSending(false)
         stopAudio()
         setResult(null)
         setError(null)
         setIsPlaying(false)
+        setMessage('')
         audioBufferRef.current = null
       } catch (error) {
         setError('Error occurred while ending the call')
@@ -116,47 +123,75 @@ export default function CallComponent() {
       setIsSending(true)
       setError(null)
       setResponseAudio(null)
+      audioBufferQueueRef.current = []
 
-      try {
-        const response = await fetch('/api/respond', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            call_id: result.call_id,
-            message: message.trim(),
-          }),
-        })
+      const queryString = new URLSearchParams({
+        call_id: result.call_id,
+        message: message.trim(),
+      }).toString();
+      const url = `/api/respond?${queryString}`;
+    
+      const eventSource = new EventSourcePolyfill(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+      });
 
-        if (!response.ok) {
-          throw new Error('Failed to send message')
+      eventSource.onopen = () => {
+        console.log('Connection to SSE stream opened');
+      };
+    
+      eventSource.onmessage = (event: MessageEvent) => {
+        try {
+          const parsedData: AudioChunk = JSON.parse(event.data);
+          console.log('Received event:', parsedData);
+          if (parsedData.event == 'stream-end'){
+            eventSource.close()
+            setIsSending(false)
+            setMessage('')
+          }
+          if (parsedData.event == 'audio-chunk'){
+            const audioData = base64ToFloat32Array(parsedData.audio)
+            audioBufferQueueRef.current.push(audioData)
+            if (!isPlayingRef.current) {
+              playNextChunk()
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing SSE data:', error);
         }
+      };
+    
+      eventSource.onerror = (error: any) => {
+        console.error('SSE stream error:', error);
+        eventSource.close();
+      };
+    }
+  }
 
-        const reader = response.body?.getReader()
-        const decoder = new TextDecoder()
+  const playNextChunk = async () => {
+    if (audioBufferQueueRef.current.length > 0 && audioContextRef.current) {
+      isPlayingRef.current = true
+      const chunk = audioBufferQueueRef.current.shift()!
+      const audioBuffer = audioContextRef.current.createBuffer(1, chunk.length, 44100)
+      audioBuffer.getChannelData(0).set(chunk)
 
-        while (true) {
-          const { done, value } = await reader?.read() || { done: true, value: undefined }
-          if (done) break
-
-          const chunk = decoder.decode(value)
-          console.log(chunk)
-          // const data = JSON.parse(chunk)
-
-          // if (data.audio) {
-            setResponseAudio(chunk)
-            playAudio(chunk)
-          // }
+      const source = audioContextRef.current.createBufferSource()
+      source.buffer = audioBuffer
+      source.connect(audioContextRef.current.destination)
+      source.onended = () => {
+        if (audioBufferQueueRef.current.length > 0) {
+          playNextChunk()
+        } else {
+          isPlayingRef.current = false
         }
-
-        setMessage('')
-      } catch (error) {
-        console.error('Error:', error)
-        setError('Error occurred while sending the message')
-      } finally {
-        setIsSending(false)
       }
+      source.start()
+      setIsPlaying(true)
+    } else {
+      isPlayingRef.current = false
+      setIsPlaying(false)
     }
   }
 
@@ -191,7 +226,7 @@ return (
               className={`p-2 rounded-full ${isPlaying ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'}`}
               disabled={!result.greeting_audio}
             >
-              {isPlaying ? <VolumeX size={24} color="white" /> : <Volume2 size={24} color="white" />}
+              {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
             </button>
           </div>
           <div className="mt-4">

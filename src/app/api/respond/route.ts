@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { EventSourceParserStream } from 'eventsource-parser/stream'
 
-export async function POST(req: NextRequest) {
-  const { call_id, message } = await req.json()
+export async function GET(req: NextRequest) {
+  const params = await req.nextUrl.searchParams;
+
+  const call_id = params.get('call_id');
+  const message = params.get('message');
+
+  console.log('Received parameters:', { call_id, message });
+
   const apiKey = process.env.DELPHI_API_KEY
   const baseUrl = process.env.DELPHI_API_BASE_URI
 
@@ -38,15 +44,9 @@ export async function POST(req: NextRequest) {
     transform(chunk, controller) {
       // Parse the event data
       const event = JSON.parse(chunk.data);
-      
-      if (event.event == 'audio-chunk') {
-        // Pass the raw audio chunk to the client
-        console.log("audio-chunk being processed")
-        const processedData = event.audio;
-        const encoder = new TextEncoder();
-        controller.enqueue(encoder.encode(processedData));
-      }
-
+      const encoder = new TextEncoder();
+      const processedData = JSON.stringify(event);
+      controller.enqueue(encoder.encode('data: ' + processedData + '\n\n'));
     }
   });
 
