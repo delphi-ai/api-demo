@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { startCall, StartCallResponse, endCall } from './actions'
-import { Volume2, VolumeX, Send } from 'lucide-react'
+import { Volume2, VolumeX, Send, Mic, StopCircle } from 'lucide-react'
 import { EventSourcePolyfill } from 'event-source-polyfill'
 
 interface AudioChunk {
@@ -12,22 +12,30 @@ interface AudioChunk {
 
 export default function CallComponent() {
   const [isLoading, setIsLoading] = useState(false)
-  const [result, setResult] = useState<StartCallResponse | null>(null)
+  const [callInfo, setCallInfo] = useState<StartCallResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [responseAudio, setResponseAudio] = useState<string | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioBufferRef = useRef<AudioBuffer | null>(null)
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
   const audioBufferQueueRef = useRef<Float32Array[]>([])
   const isPlayingRef = useRef(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
 
   useEffect(() => {
     return () => {
       if (audioContextRef.current) {
         audioContextRef.current.close()
+      }
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
       }
     }
   }, [])
@@ -35,10 +43,10 @@ export default function CallComponent() {
   const handleStartCall = async () => {
     setIsLoading(true)
     setError(null)
-    setResult(null)
+    setCallInfo(null)
     try {
       const response = await startCall()
-      setResult(response)
+      setCallInfo(response)
       await decodeAudio(response.greeting_audio)
       playAudio(response.greeting_audio)
     } catch (error) {
@@ -98,13 +106,13 @@ export default function CallComponent() {
   }
 
   const handleEndCall = async () => {
-    if (result) {
+    if (callInfo) {
       setIsLoading(true)
       try {
-        await endCall(result.call_id)
+        await endCall(callInfo.call_id)
         setIsSending(false)
         stopAudio()
-        setResult(null)
+        setCallInfo(null)
         setError(null)
         setIsPlaying(false)
         setMessage('')
@@ -118,18 +126,19 @@ export default function CallComponent() {
     }
   }
 
-  const handleSendMessage = async () => {
-    if (result && message.trim()) {
+  // Two examples of how you could send a message to the Delphi API.
+  const handleSendTextMessage = async () => {
+    if (callInfo && message.trim()) {
       setIsSending(true)
       setError(null)
       setResponseAudio(null)
       audioBufferQueueRef.current = []
 
       const queryString = new URLSearchParams({
-        call_id: result.call_id,
+        call_id: callInfo.call_id,
         message: message.trim(),
       }).toString();
-      const url = `/api/respond?${queryString}`;
+      const url = `/api/call/text?${queryString}`;
     
       const eventSource = new EventSourcePolyfill(url, {
         headers: {
@@ -170,6 +179,57 @@ export default function CallComponent() {
     }
   }
 
+  const handleSendAudioMessage = async () => {
+    if (callInfo && audioBlob) {
+      console.log('Sending audio blob:', audioBlob)
+      try { 
+        const response = await fetch(`/api/call/audio`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+          },
+          body: JSON.stringify({
+            call_id: callInfo.call_id,
+            audio: audioBlob
+          })
+        });
+        
+        if (!response.ok || !response.body) {
+          throw new Error('Failed to connect to Delphi API');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const eventData = JSON.parse(line.slice(6));
+              console.log('Event data:', eventData);
+              
+              // Process the event data here
+              // setEvents(prevEvents => [...prevEvents, eventData]);
+              
+              // You can add more logic here to handle different types of events
+              // or update other state variables based on the event data
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        // Handle errors here
+      }
+      setAudioBlob(null);
+    }
+  }
+
   const playNextChunk = async () => {
     if (audioBufferQueueRef.current.length > 0 && audioContextRef.current) {
       isPlayingRef.current = true
@@ -195,9 +255,39 @@ export default function CallComponent() {
     }
   }
 
-return (
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaRecorderRef.current = new MediaRecorder(stream)
+      
+      const audioChunks: Blob[] = []
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunks.push(event.data)
+      }
+
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' })
+        setAudioBlob(audioBlob)
+      }
+
+      mediaRecorderRef.current.start()
+      setIsRecording(true)
+    } catch (error) {
+      console.error('Error accessing microphone:', error)
+      setError('Error accessing microphone')
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+  }
+
+  return (
     <div className="flex flex-col items-center">
-      {!result ? (
+      {!callInfo ? (
         <button
           onClick={handleStartCall}
           disabled={isLoading}
@@ -215,22 +305,22 @@ return (
         </button>
       )}
       {error && <p className="mt-4 text-red-500">{error}</p>}
-      {result && (
+      {callInfo && (
         <div className="mt-4 text-center">
           <p className="font-bold text-green-600">Success! Call started.</p>
-          <p className="mt-2">Call ID: {result.call_id}</p>
+          <p className="mt-2">Call ID: {callInfo.call_id}</p>
           <div className="mt-4 flex items-center justify-center">
             <p className="mr-2">Click to play greeting message:</p>
             <button
-              onClick={isPlaying ? stopAudio : () => playAudio(result.greeting_audio)}
+              onClick={isPlaying ? stopAudio : () => playAudio(callInfo.greeting_audio)}
               className={`p-2 rounded-full ${isPlaying ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'}`}
-              disabled={!result.greeting_audio}
+              disabled={!callInfo.greeting_audio}
             >
               {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
             </button>
           </div>
           <div className="mt-4">
-            <p className="mb-2 font-bold">Type a message:</p>
+            <p className="mb-2 font-bold"><b>Type a message:</b></p>
             <div className="flex items-center">
               <input
                 type="text"
@@ -238,19 +328,41 @@ return (
                 onChange={(e) => setMessage(e.target.value)}
                 className="flex-grow px-3 py-2 border rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Enter your message..."
-                disabled={isSending}
+                disabled={isSending || isRecording}
               />
               <button
-                onClick={handleSendMessage}
-                disabled={!message.trim() || isSending}
+                onClick={handleSendTextMessage}
+                disabled={!message.trim() || isSending || isRecording}
                 className={`px-4 py-2 rounded-r-md ${
-                  message.trim() && !isSending
+                  message.trim() && !isSending && !isRecording
                     ? 'bg-blue-500 hover:bg-blue-700 text-white'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
                 {isSending ? 'Sending...' : <Send size={20} />}
               </button>
+              <p>In your application you could have the user type a message, or use a transcriber like Deepgram to convert audio to text. Transcribing in real time will save ~1 second of latency, because then the API doens't have to transcribe your audio.</p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <p className="mb-2 font-bold"><b>Record a message:</b></p>
+            <div className="flex items-center justify-center space-x-2">
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`p-2 rounded-full ${
+                  isRecording ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'
+                } text-white`}
+              >
+                {isRecording ? <StopCircle size={24} /> : <Mic size={24} />}
+              </button>
+              {audioBlob && (
+                <button
+                  onClick={handleSendAudioMessage}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-700 text-white rounded-md"
+                >
+                  Send Audio
+                </button>
+              )}
             </div>
           </div>
           {responseAudio && (
@@ -260,7 +372,7 @@ return (
                 onClick={isPlaying ? stopAudio : () => playAudio(responseAudio)}
                 className={`p-2 rounded-full ${isPlaying ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'}`}
               >
-                {isPlaying ? <VolumeX size={24} color="white" /> : <Volume2 size={24} color="white" />}
+                {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
               </button>
             </div>
           )}
@@ -268,5 +380,4 @@ return (
       )}
     </div>
   )
-
 }

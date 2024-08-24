@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
   })
 
   if (!response.ok) {
+    console.log('Response body:', response.body)
     return NextResponse.json({ error: 'Failed to connect to Delphi API' }, { status: response.status })
   }
 
