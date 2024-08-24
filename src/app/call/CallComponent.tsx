@@ -183,15 +183,16 @@ export default function CallComponent() {
     if (callInfo && audioBlob) {
       console.log('Sending audio blob:', audioBlob)
       try { 
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
         const response = await fetch(`/api/call/audio`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             'Accept': 'text/event-stream',
           },
           body: JSON.stringify({
             call_id: callInfo.call_id,
-            audio: audioBlob
+            audio: base64Audio
           })
         });
         
