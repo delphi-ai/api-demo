@@ -5,6 +5,7 @@ import { startCall, StartCallResponse, endCall } from './actions'
 import { Volume2, VolumeX, Send, Mic, StopCircle } from 'lucide-react'
 import { EventSourcePolyfill } from 'event-source-polyfill'
 import { base64ToFloat32Array, arrayBufferToBase64 } from './utils'
+import './CallComponent.css'
 
 interface AudioChunk {
   event: string
@@ -243,6 +244,7 @@ export default function CallComponent() {
           playNextChunk()
         } else {
           isPlayingRef.current = false
+          setIsPlaying(false)
         }
       }
       source.start()
@@ -284,12 +286,12 @@ export default function CallComponent() {
   }
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="call-container">
       {!callInfo ? (
         <button
           onClick={handleStartCall}
           disabled={isLoading}
-          className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+          className="btn btn-start"
         >
           {isLoading ? 'Starting Call...' : 'Start Call'}
         </button>
@@ -297,67 +299,58 @@ export default function CallComponent() {
         <button
           onClick={handleEndCall}
           disabled={isLoading}
-          className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+          className="btn btn-end"
         >
           {isLoading ? 'Ending Call...' : 'End Call'}
         </button>
       )}
-      {error && <p className="mt-4 text-red-500">{error}</p>}
+      {error && <p className="error-message">{error}</p>}
       {callInfo && (
-        <div className="mt-4 text-center">
-          <p className="font-bold text-green-600">Success! Call started.</p>
-          <p className="mt-2">Call ID: {callInfo.call_id}</p>
-          <div className="mt-4">
-            <p className="mb-2 font-bold"><b>Type a message:</b></p>
-            <div className="flex items-center">
+        <div className="call-info">
+          <p className="success-message">Success! Call started.</p>
+          <p className="call-id">Call ID: {callInfo.call_id}</p>
+          <div className="message-input">
+            <p className="input-label"><b>Type a message:</b></p>
+            <div className="input-container">
               <input
                 type="text"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                className="flex-grow px-3 py-2 border rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-input"
                 placeholder="Enter your message..."
                 disabled={isSending || isRecording}
               />
               <button
                 onClick={handleSendTextMessage}
                 disabled={!message.trim() || isSending || isRecording}
-                className={`px-4 py-2 rounded-r-md ${
-                  message.trim() && !isSending && !isRecording
-                    ? 'bg-blue-500 hover:bg-blue-700 text-white'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
+                className={`btn btn-send ${(!message.trim() || isSending || isRecording) ? 'btn-disabled' : ''}`}
               >
                 {isSending ? 'Sending...' : <Send size={20} />}
               </button>
-              <p>In your application you could have the user type a message, or use a transcriber like Deepgram to convert audio to text. Transcribing in real time will save ~1 second of latency, because then the API doens't have to transcribe your audio.</p>
             </div>
+            <p className="info-text">In your application you could have the user type a message, or use a transcriber like Deepgram to convert audio to text. Transcribing in real time will save ~1 second of latency, because then the API doesn't have to transcribe your audio.</p>
           </div>
-          <div className="mt-4">
-            <p className="mb-2 font-bold"><b>Record a message:</b></p>
-            <div className="flex items-center justify-center space-x-2">
+          <div className="audio-input">
+            <p className="input-label"><b>Record a message:</b></p>
+            <div className="audio-controls">
               <button
                 onClick={isRecording ? stopRecording : startRecording}
-                className={`p-2 rounded-full ${
-                  isRecording ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'
-                } text-white`}
+                className={`btn btn-record ${isRecording ? 'recording' : ''}`}
               >
                 {isRecording ? <StopCircle size={24} /> : <Mic size={24} />}
               </button>
               {audioBlob && (
                 <button
                   onClick={handleSendAudioMessage}
-                  className="px-4 py-2 bg-green-500 hover:bg-green-700 text-white rounded-md"
+                  className="btn btn-send-audio"
                 >
                   Send Audio
                 </button>
               )}
             </div>
           </div>
-          <div>
-          <div className="mt-15 flex items-center justify-center">
-              {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
-          </div>
-
+          <div className="audio-status">
+            {isPlaying ? <Volume2 size={24} color="black" /> : <VolumeX size={24} color="black" />}
           </div>
         </div>
       )}
