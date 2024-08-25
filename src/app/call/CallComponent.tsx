@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { startCall, StartCallResponse, endCall } from './actions'
 import { Volume2, VolumeX, Send, Mic, StopCircle } from 'lucide-react'
 import { EventSourcePolyfill } from 'event-source-polyfill'
+import { base64ToFloat32Array, arrayBufferToBase64 } from './utils'
 
 interface AudioChunk {
   event: string
@@ -17,7 +18,6 @@ export default function CallComponent() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [message, setMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
-  const [responseAudio, setResponseAudio] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
 
@@ -68,19 +68,6 @@ export default function CallComponent() {
     return audioBuffer
   }
 
-  const base64ToFloat32Array = (base64: string) => {
-    const binaryString = window.atob(base64)
-    const bytes = new Uint8Array(binaryString.length)
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i)
-    }
-    const int16Array = new Int16Array(bytes.buffer)
-    const float32Array = new Float32Array(int16Array.length)
-    for (let i = 0; i < int16Array.length; i++) {
-      float32Array[i] = int16Array[i] / 32768.0
-    }
-    return float32Array
-  }
 
   const playAudio = async (audioData: string) => {
     if (!audioContextRef.current) {
@@ -131,7 +118,6 @@ export default function CallComponent() {
     if (callInfo && message.trim()) {
       setIsSending(true)
       setError(null)
-      setResponseAudio(null)
       audioBufferQueueRef.current = []
 
       const queryString = new URLSearchParams({
@@ -178,17 +164,6 @@ export default function CallComponent() {
       };
     }
   }
-
-  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  };
-
 
   const handleSendAudioMessage = async () => {
     if (callInfo && audioBlob) {
@@ -250,8 +225,6 @@ export default function CallComponent() {
         // Handle errors here
       }
       setAudioBlob(null);
-      setIsSending(false);
-      setMessage('');
     }
   }
 
@@ -334,16 +307,6 @@ export default function CallComponent() {
         <div className="mt-4 text-center">
           <p className="font-bold text-green-600">Success! Call started.</p>
           <p className="mt-2">Call ID: {callInfo.call_id}</p>
-          <div className="mt-4 flex items-center justify-center">
-            <p className="mr-2">Click to play greeting message:</p>
-            <button
-              onClick={isPlaying ? stopAudio : () => playAudio(callInfo.greeting_audio)}
-              className={`p-2 rounded-full ${isPlaying ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'}`}
-              disabled={!callInfo.greeting_audio}
-            >
-              {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
-            </button>
-          </div>
           <div className="mt-4">
             <p className="mb-2 font-bold"><b>Type a message:</b></p>
             <div className="flex items-center">
@@ -390,17 +353,12 @@ export default function CallComponent() {
               )}
             </div>
           </div>
-          {responseAudio && (
-            <div className="mt-4">
-              <p className="mb-2 font-bold">Response received:</p>
-              <button
-                onClick={isPlaying ? stopAudio : () => playAudio(responseAudio)}
-                className={`p-2 rounded-full ${isPlaying ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-700'}`}
-              >
-                {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
-              </button>
-            </div>
-          )}
+          <div>
+          <div className="mt-15 flex items-center justify-center">
+              {isPlaying ? <VolumeX size={24} color="red" /> : <Volume2 size={24} color="black" />}
+          </div>
+
+          </div>
         </div>
       )}
     </div>
